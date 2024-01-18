@@ -41,7 +41,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Link the executable to the library just created.
-target_link_libraries(mvcon_basic_flight_node
+target_link_libraries(lqr_controller
   ${PROJECT_NAME}
 )
 
