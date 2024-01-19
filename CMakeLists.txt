@@ -22,6 +22,8 @@ include_directories(
 include
   ${catkin_INCLUDE_DIRS}
   ${PROJECT_SOURCE_DIR}/include/${PROJECT_NAME}
+  $ENV{EIGEN3_INCLUDE_DIRS}
+  # ${manif_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library

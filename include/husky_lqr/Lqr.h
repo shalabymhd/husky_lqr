@@ -1,6 +1,9 @@
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
+#include <Eigen/Dense>
+#include "manif/SE2.h"
+// #include <vector>
 
 class Lqr{
 public:
@@ -18,6 +21,24 @@ private:
     ros::Subscriber m_traj_pose_sub;
     ros::Subscriber m_pose_sub;
     ros::Subscriber m_ff_cmd_sub;
+
+    Eigen::Matrix3d Q; // state cost
+    Eigen::Matrix2d R; // control cost
+    Eigen::Matrix3d S; // terminal cost
+
+    int N; // number of timesteps
+
+    /* ------------------------ Methods ------------------------ */
+    Eigen::Matrix<double, 2, 3> _compute_gain(
+        manif::SE2d, 
+        Eigen::Vector2d
+    );
+    void _process_jacobians(
+        manif::SE2d, 
+        Eigen::Vector2d, 
+        Eigen::Matrix3d*, 
+        Eigen::Matrix<double, 3, 2>*
+    );
 
     /* ------------------------ Callbacks ------------------------ */
     static void _traj_pose_cb(
