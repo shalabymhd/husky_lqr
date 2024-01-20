@@ -3,6 +3,7 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <Eigen/Dense>
 #include "manif/SE2.h"
+#include <gazebo_msgs/ModelStates.h>
 // #include <vector>
 
 class Lqr{
@@ -10,7 +11,7 @@ public:
     Lqr();
 
     geometry_msgs::TwistStamped m_ff_cmd;
-    geometry_msgs::PoseStamped m_pose;
+    gazebo_msgs::ModelStates m_pose;
     geometry_msgs::PoseStamped m_traj_pose;
 
 protected:
@@ -27,6 +28,7 @@ private:
     Eigen::Matrix3d S; // terminal cost
 
     int N; // number of timesteps
+    float dt; // timestep size
 
     /* ------------------------ Methods ------------------------ */
     Eigen::Matrix<double, 2, 3> _compute_gain(
@@ -47,8 +49,8 @@ private:
     );
 
     static void _pose_cb(
-        const geometry_msgs::PoseStamped::ConstPtr& msg,
-        geometry_msgs::PoseStamped& pose
+        const gazebo_msgs::ModelStates::ConstPtr& msg,
+        gazebo_msgs::ModelStates& pose
     );
 
     static void _ff_cmd_cb(
