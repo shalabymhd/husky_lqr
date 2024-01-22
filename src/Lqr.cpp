@@ -2,18 +2,17 @@
 
 /* ------------------------ Constructor ------------------------ */
 Lqr::Lqr() {
-
     /* ------------------------ Parameters ------------------------ */
-    // TODO: make these parameters customizable
-    Q << 0.05, 0, 0,
-         0, 0.03, 0,
-         0, 0, 0.04;
-    R << 0.01, 0,
-         0, 0.01;
-    S << 0.05, 0, 0,
-         0, 0.03, 0,
-         0, 0, 0.04;
-    N = 25;
+    // // TODO: make these parameters customizable
+    Q << 30, 0, 0,
+         0, 30, 0,
+         0, 0, 25;
+    R << 5, 0,
+         0, 5;
+    S << 30, 0, 0,
+         0, 30, 0,
+         0, 0, 30;
+    N = 50;
 
     dt = 0.02;
 
@@ -58,51 +57,43 @@ Lqr::Lqr() {
     ros::topic::waitForMessage<gazebo_msgs::ModelStates>(
         "/gazebo/model_states"
     );
-    
+
     // /* ------------------------ Main Loop ------------------------ */
     Eigen::Matrix<double, 2, 3> K;
     geometry_msgs::Twist cmd_vel;
     ros::Rate rate(1/dt);
-    Eigen::Vector2d u_fb = Eigen::Vector2d::Zero();
 
     Eigen::Matrix2d M;
     M << 0, 1,
          1, 0;
 
-    double offset = 999;
+    // double offset = 999;
     while (!ros::isShuttingDown()) {
+        // TODO: make these parameters customizable
         ros::spinOnce();
-
-        if (offset == 999 & m_ff_cmd.header.stamp.toSec() > 1) {
-            offset = ros::Time::now().toSec() - m_ff_cmd.header.stamp.toSec();
-        }
-
-        double time_diff = ros::Time::now().toSec() - m_ff_cmd.header.stamp.toSec() - offset;
-        ROS_INFO("ROS TIME: %f", ros::Time::now().toSec());
-        ROS_INFO("FF CMD TIME: %f", m_ff_cmd.header.stamp.toSec());
-        ROS_INFO("TIME DIFF: %f", time_diff);
-
+        Eigen::Vector2d u_fb;
         Eigen::Vector2d u_ff;
-        if (abs(time_diff) < dt) {
-            u_ff << m_ff_cmd.twist.angular.z, m_ff_cmd.twist.linear.x;
-        }
-        else {
-            u_ff << 0, 0;
-        }
+        u_ff << m_ff_cmd.twist.angular.z, m_ff_cmd.twist.linear.x;
         
+        float qz = m_pose.pose[1].orientation.z;
+        float qw = m_pose.pose[1].orientation.w;
+        float theta = std::atan2(2*qz*qw, 1-2*qz*qz);
         manif::SE2d X_current(
             m_pose.pose[1].position.x, 
             m_pose.pose[1].position.y, 
-            m_pose.pose[1].orientation.z
+            theta
         );
+        qz = m_traj_pose.pose.orientation.z;
+        qw = m_traj_pose.pose.orientation.w;
+        theta = std::atan2(2*qz*qw, 1-2*qz*qz);
         manif::SE2d X_desired(
             m_traj_pose.pose.position.x, 
             m_traj_pose.pose.position.y, 
-            m_traj_pose.pose.orientation.z
+            theta
         );
 
-        K = _compute_gain(X_current, u_ff - M*u_fb);
-        // manif::SE2Tangentd X_error = X_desired - X_current;
+        // K = _compute_gain(X_current, u_ff - M*u_fb);
+        K = _compute_gain(X_current, u_ff);
         manif::SE2d X_error = X_current.between(X_desired);
 
         u_fb = - K * X_error.log().coeffs();
@@ -111,14 +102,21 @@ Lqr::Lqr() {
         ROS_INFO("X_desired: %f, %f, %f", X_desired.translation().x(), X_desired.translation().y(), X_desired.angle());
         ROS_INFO("X_error: %f, %f, %f", X_error.log().coeffs()[0], X_error.log().coeffs()[1], X_error.log().coeffs()[2]);
         
-        // ROS_INFO("K_row_1: %f, %f, %f", K(0,0), K(0,1), K(0,2));
-        // ROS_INFO("K_row_2: %f, %f, %f", K(1,0), K(1,1), K(1,2));
+        if (abs(u_fb[0]) > 0.5) {
+            u_fb[0] = 0.5 * u_fb[0] / abs(u_fb[0]);
+        }
+        if (abs(u_fb[1]) > 0.5) {
+            u_fb[1] = 0.5 * u_fb[1] / abs(u_fb[1]);
+        }
         
         ROS_INFO("u_fb: %f, %f", u_fb[0], u_fb[1]);
         ROS_INFO("u_ff: %f, %f", u_ff[1], u_ff[0]);
 
-        cmd_vel.linear.x = u_ff[1];// - u_fb[0];
-        cmd_vel.angular.z = u_ff[0];// - u_fb[1];
+        cmd_vel.linear.x = (double)(
+                (X_error.rotation() * Eigen::Vector2d(u_ff[1], 0))[0]
+                - u_fb[0]
+        );
+        cmd_vel.angular.z = (double) (u_ff[0] - u_fb[1]);
         
         m_cmd_vel_pub.publish(cmd_vel);
         rate.sleep();
@@ -129,18 +127,20 @@ Lqr::Lqr() {
 Eigen::Matrix<double, 2, 3> Lqr::_compute_gain(manif::SE2d X, Eigen::Vector2d u_ff) {
     // TODO: for now, we linearize about the current trajectory pose,
     // but we should linearize about current and future trajectory poses
-    Eigen::Matrix3d P = S;
-    Eigen::Matrix2d R;
+    Eigen::Matrix3d P;
+    Eigen::Matrix2d R_bar;
     Eigen::Matrix3d A;
     Eigen::Matrix<double, 3, 2> B;
     
+    // TODO: actually don't need X anywhere here
+    _process_jacobians(X, u_ff, &A, &B);
+    P = S;
     for (int i = N-1; i > 0; i--) {
-        _process_jacobians(X, u_ff, &A, &B);
-        R = R + B.transpose() * P * B; // R at time step i+1 
-        P = A.transpose() * (P - P * B * R.inverse() * B.transpose() * P) * A + Q; // P at time step i
+        R_bar = R + B.transpose() * P * B; // R at time step i+1 
+        P = A.transpose() * (P - P * B * R_bar.inverse() * B.transpose() * P) * A + Q; // P at time step i
     }
-    R = R + B.transpose() * P * B; // R at time step 0
-    return R.inverse() * B.transpose() * P * A;
+    R_bar = R + B.transpose() * P * B; // R at time step 1
+    return R_bar.inverse() * B.transpose() * P * A;
 }
 
 void Lqr::_process_jacobians(
@@ -151,8 +151,7 @@ void Lqr::_process_jacobians(
 ) {
     manif::SE2Tangentd u_tilde(u_ff(1), 0, u_ff(0));
     u_tilde = u_tilde * dt;
-    *A = (-u_tilde).exp().adj();
-    // *A = Eigen::Matrix3d::Identity();
+    *A = u_tilde.exp().inverse().adj();
 
     Eigen::Matrix<double, 3, 2> M;
     M << 1, 0,

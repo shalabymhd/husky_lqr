@@ -5,11 +5,11 @@ This launch file is for running LQR controlled husky in Gazebo Simulation
 
 <launch>
     <include file="/opt/ros/melodic/share/husky_gazebo/launch/husky_empty_world.launch" />
-    <node 
+    <!-- <node 
         pkg="rosbag" 
         type="play" 
         name="player" 
         args="/home/shalaby/catkin_tar/src/tar_husky/bags/simulation_reference_bag/result_stamped.bag"
-    />
+    /> -->
     <node name="HuskyController" pkg="husky_lqr" type="lqr_controller" output="screen"/>
 </launch>
