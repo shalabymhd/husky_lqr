@@ -20,9 +20,9 @@ catkin_package(
 
 include_directories(
 include
+  $ENV{EIGEN3_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
   ${PROJECT_SOURCE_DIR}/include/${PROJECT_NAME}
-  $ENV{EIGEN3_INCLUDE_DIRS}
   # ${manif_INCLUDE_DIRS}
 )
 
